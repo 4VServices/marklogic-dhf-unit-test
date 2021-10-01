@@ -1,0 +1,6 @@
+.gradle
+gradle-local.properties
+build
+src/main/entity-config
+.project
+.settings
