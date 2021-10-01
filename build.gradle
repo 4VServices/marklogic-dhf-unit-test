@@ -32,11 +32,11 @@ dependencies {
 
 /**
  * The below tasks are used for deploying and undeploying test resources for a DHF 5 application. Just copy everything below
- * this comment into the build.gradle file in your DHF application - no properties need to be set for these tasks to work.
+ * this comment into the build.gradle file in your DHF application.
  *
- * The task "hubDeployTestResources" will deploy test versions of your staging and final databases and app servers. You
- * can customize these tasks if you don't like the resource names and ports that are used by them. Note that mlDeploy
- * does not depend on this task by default - you'll need to invoke it in order to create test resources.
+ * The hubDeployTestResources will be skipped if the mlTestFinalPort property is not defined or has no value.
+ *
+ * The task "hubDeployTestResources" will deploy test versions of your staging and final databases and app servers.
  *
  * The task "hubUndeployTestResources" will undeploy any test resources that were created. mlUndeploy does depend on
  * this task as there's typically no downside to undeploying these resources - if they don't exist, the task will
