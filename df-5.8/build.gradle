@@ -1,0 +1,242 @@
+plugins {
+  // Gradle Properties plugin
+  id 'net.saliman.properties' version '1.4.6'
+
+  // Data Hub plugin
+  id 'com.marklogic.ml-data-hub' version '5.8.0'
+}
+
+repositories {
+  mavenCentral()
+
+  // maven { url "https://developer.marklogic.com/maven2/" }
+}
+
+dependencies {
+  // Ensures that the marklogic-unit-test modules are loaded into the modules database when the application is deployed
+  mlBundle "com.marklogic:marklogic-unit-test-modules:1.3.0"
+}
+
+/*** TEST INFRASTRUCTURE *****
+ ***
+ *** Creates data-hub-FINAL-TEST, data-hub-STAGING-TEST
+ ***
+ ***/
+
+/**
+ * The below tasks are used for deploying and undeploying test resources for a DHF 5 application. Just copy everything below
+ * this comment into the build.gradle file in your DHF application.
+ *
+ * The hubDeployTestResources will be skipped if the mlTestFinalPort property is not defined or has no value.
+ *
+ * The task "hubDeployTestResources" will deploy test versions of your staging and final databases and app servers.
+ *
+ * The task "hubUndeployTestResources" will undeploy any test resources that were created. mlUndeploy does depend on
+ * this task as there's typically no downside to undeploying these resources - if they don't exist, the task will
+ * quickly complete.
+ */
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.node.TextNode
+import com.marklogic.hub.HubConfig
+import com.marklogic.appdeployer.command.CommandContext;
+import com.marklogic.hub.deploy.commands.DeployHubDatabaseCommand;
+import java.util.regex.Pattern
+
+class DeployHubTestDatabaseCommand extends com.marklogic.hub.deploy.commands.DeployHubDatabaseCommand {
+  String testDatabaseName;
+
+  DeployHubTestDatabaseCommand(HubConfig config, File testDbFile, String testDatabaseName) {
+    super(config, testDbFile, testDbFile.getName())
+    this.testDatabaseName = testDatabaseName
+  }
+
+  @Override
+  protected String getPayload(CommandContext context) {
+    if (databaseFilename.endsWith(".json")) {
+      String payload = super.getPayload(context)
+      ObjectNode node = new ObjectMapper().readTree(payload)
+      node.set("database-name", new TextNode(testDatabaseName))
+      return node.toString()
+    } else {
+      // xml
+      def tokens = context.getAppConfig().getCustomTokens();
+      def finalDb = tokens.get("%%mlFinalDbName%%");
+      if (!finalDb.endsWith("-TEST")) {
+        tokens.put("%%mlFinalDbName%%", finalDb + "-TEST");
+      }
+      def stagingDb = tokens.get("%%mlStagingDbName%%");
+      if (!stagingDb.endsWith("-TEST")) {
+        tokens.put("%%mlStagingDbName%%", stagingDb + "-TEST");
+      }
+      return copyFileToString(new File(this.toString()), context);
+    }
+  }
+}
+
+class DeployHubTestServerCommand extends com.marklogic.appdeployer.command.appservers.DeployOtherServersCommand {
+  String serverName
+  int port
+  String contentDatabaseName
+
+  DeployHubTestServerCommand(String serverFilenamePattern, String serverName, int port, String contentDatabaseName) {
+    super()
+    setResourceFilenamesIncludePattern(Pattern.compile(serverFilenamePattern))
+    this.serverName = serverName
+    this.port = port
+    this.contentDatabaseName = contentDatabaseName
+  }
+
+  @Override
+  protected String copyFileToString(File f) {
+    String payload = super.copyFileToString(f)
+    ObjectNode node = new ObjectMapper().readTree(payload)
+    node.set("server-name", new TextNode(serverName))
+    node.set("port", new TextNode(port + ""))
+    node.set("content-database", new TextNode(contentDatabaseName))
+    return node.toString()
+  }
+}
+
+tasks.register('copyStagingFieldsForTest', Copy) {
+  from "src/main/hub-internal-config/database-fields/staging-database.xml"
+  into "$buildDir"
+  rename { String fileName -> "test-" + fileName }
+}
+
+task hubDeployTestFieldsStagingDatabase(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast {
+    File testDbFile = new File(buildDir, "test-staging-database.xml");
+    DeployHubTestDatabaseCommand command = new DeployHubTestDatabaseCommand(hubConfig, testDbFile, mlStagingDbName + "-TEST")
+    command.execute(mlCommandContext)
+  }
+}
+hubDeployTestFieldsStagingDatabase.dependsOn(copyStagingFieldsForTest)
+
+tasks.register('copyStagingForTest', Copy) {
+  from "src/main/hub-internal-config/databases/staging-database.json"
+  into "$buildDir"
+  rename { String fileName -> "test-" + fileName }
+}
+
+task hubDeployTestStagingDatabase(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast {
+    File testDbFile = new File(buildDir, "test-staging-database.json");
+    DeployHubTestDatabaseCommand command = new DeployHubTestDatabaseCommand(hubConfig, testDbFile, mlStagingDbName + "-TEST")
+    command.execute(mlCommandContext)
+  }
+}
+hubDeployTestStagingDatabase.dependsOn(copyStagingForTest)
+
+tasks.register('copyFinalFieldsForTest', Copy) {
+  from "src/main/ml-config/database-fields/final-database.xml"
+  into "$buildDir"
+  rename { String fileName -> "test-" + fileName }
+}
+
+task hubDeployTestFieldsFinalDatabase(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast {
+    File testDbFile = new File(buildDir, "test-final-database.xml");
+    DeployHubTestDatabaseCommand command = new DeployHubTestDatabaseCommand(hubConfig, testDbFile, mlFinalDbName + "-TEST")
+    command.execute(mlCommandContext)
+  }
+}
+hubDeployTestFieldsFinalDatabase.dependsOn(copyFinalFieldsForTest)
+
+tasks.register('copyEntityConfigFinalForTest', Copy) {
+  from "src/main/entity-config/databases/final-database.json"
+  into "$buildDir"
+  rename { String fileName -> "test-" + fileName }
+}
+
+task hubDeployTestEntityConfigFinalDatabase(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast {
+    File testDbFile = new File(buildDir, "test-final-database.json");
+    DeployHubTestDatabaseCommand command = new DeployHubTestDatabaseCommand(hubConfig, testDbFile, mlFinalDbName + "-TEST")
+    command.execute(mlCommandContext)
+  }
+}
+hubDeployTestEntityConfigFinalDatabase.dependsOn(copyEntityConfigFinalForTest)
+
+tasks.register('copyFinalForTest', Copy) {
+  from "src/main/ml-config/databases/final-database.json"
+  into "$buildDir"
+  rename { String fileName -> "test-" + fileName }
+}
+
+task hubDeployTestFinalDatabase(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast {
+    File testDbFile = new File(buildDir, "test-final-database.json");
+    DeployHubTestDatabaseCommand command = new DeployHubTestDatabaseCommand(hubConfig, testDbFile, mlFinalDbName + "-TEST")
+    command.execute(mlCommandContext)
+  }
+}
+hubDeployTestFinalDatabase.dependsOn(copyFinalForTest)
+
+task hubDeployTestDatabases(type: com.marklogic.gradle.task.MarkLogicTask) {
+  dependsOn = [
+    "hubDeployTestStagingDatabase", 
+    "hubDeployTestFieldsStagingDatabase", 
+    "hubDeployTestFieldsFinalDatabase", 
+    "hubDeployTestFinalDatabase", 
+    "hubDeployTestEntityConfigFinalDatabase"
+  ]
+}
+
+task hubDeployTestServers(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast {
+    new DeployHubTestServerCommand("staging-server.json", mlStagingAppserverName + "-TEST", mlTestStagingPort as int, mlStagingDbName + "-TEST").execute(mlCommandContext);
+    new DeployHubTestServerCommand("final-server.json", mlFinalAppserverName + "-TEST", mlTestFinalPort as int, mlFinalDbName + "-TEST").execute(mlCommandContext);
+  }
+}
+hubDeployTestServers.mustRunAfter hubDeployTestDatabases
+
+task hubDeployTestResources {
+  description = "Deploys test databases and servers"
+}
+mlDeploy.finalizedBy hubDeployTestResources
+
+if (project.hasProperty('mlTestFinalPort') && mlTestFinalPort && environmentName != "prod" && environmentName != "production") {
+  println "Installing test resources"
+  hubDeployTestResources.finalizedBy = ["hubDeployTestDatabases", "hubDeployTestServers"]
+}
+
+task removeTestCredential(type: com.marklogic.gradle.task.MarkLogicTask) {
+  doLast { 
+    def client = newClient() 
+    String javascript = """ 
+      const common = require('/test/lib/common.sjs');
+      common.removeTestCredential('%%mlAppName%%-TestCredential');
+    """; 
+    try { 
+        String result 
+        result = client.newServerEval().javascript(javascript).evalAs(String.class); 
+        if (result != null) { 
+            println result 
+        } 
+    } finally { 
+        client.release() 
+    } 
+  } 
+}
+
+task hubUndeployTestResources(type: com.marklogic.gradle.task.MarkLogicTask) {
+  description = "Undeploys the test servers and databases that were created via hubDeployTestResources"
+  doLast {
+    mlAdminManager.invokeActionRequiringRestart({
+      new com.marklogic.mgmt.resource.appservers.ServerManager(mlManageClient).deleteByIdField(mlStagingAppserverName + "-TEST")
+      return true
+    })
+    mlAdminManager.invokeActionRequiringRestart({
+      new com.marklogic.mgmt.resource.appservers.ServerManager(mlManageClient).deleteByIdField(mlFinalAppserverName + "-TEST")
+      return true
+    })
+    def dbManager = new com.marklogic.mgmt.resource.databases.DatabaseManager(mlManageClient)
+    dbManager.deleteByName(mlStagingDbName + "-TEST")
+    dbManager.deleteByName(mlFinalDbName + "-TEST")
+  }
+}
+hubUndeployTestResources.dependsOn removeTestCredential
+mlUndeploy.dependsOn hubUndeployTestResources
+/*** END TEST INFRASTRUCTURE *****/
