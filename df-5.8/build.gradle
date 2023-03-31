@@ -202,25 +202,6 @@ if (project.hasProperty('mlTestFinalPort') && mlTestFinalPort && environmentName
   hubDeployTestResources.finalizedBy = ["hubDeployTestDatabases", "hubDeployTestServers"]
 }
 
-task removeTestCredential(type: com.marklogic.gradle.task.MarkLogicTask) {
-  doLast { 
-    def client = newClient() 
-    String javascript = """ 
-      const common = require('/test/lib/common.sjs');
-      common.removeTestCredential('%%mlAppName%%-TestCredential');
-    """; 
-    try { 
-        String result 
-        result = client.newServerEval().javascript(javascript).evalAs(String.class); 
-        if (result != null) { 
-            println result 
-        } 
-    } finally { 
-        client.release() 
-    } 
-  } 
-}
-
 task hubUndeployTestResources(type: com.marklogic.gradle.task.MarkLogicTask) {
   description = "Undeploys the test servers and databases that were created via hubDeployTestResources"
   doLast {
@@ -237,6 +218,5 @@ task hubUndeployTestResources(type: com.marklogic.gradle.task.MarkLogicTask) {
     dbManager.deleteByName(mlFinalDbName + "-TEST")
   }
 }
-hubUndeployTestResources.dependsOn removeTestCredential
 mlUndeploy.dependsOn hubUndeployTestResources
 /*** END TEST INFRASTRUCTURE *****/
